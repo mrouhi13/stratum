@@ -45,21 +45,49 @@ Using jsonical from the shell to canonicalize:
     Expecting property name: line 1 column 2 (char 2)
 
 """
+from builtins import str
 import datetime
 import decimal
 import sys
 import types
 import unicodedata
+import pandas as pd
+import numpy as np
 
 try:
-    import json
-except ImportError:
     import simplejson as json
+except ImportError:
+    import json
+
+try:
+    strtypes = (unicode, str)
+except:
+    strtypes = (str, bytes)
+    unicode = str
 
 class Encoder(json.JSONEncoder):
     def __init__(self, *args, **kwargs):
         kwargs.pop("sort_keys", None)
         super(Encoder, self).__init__(sort_keys=True, *args, **kwargs)
+
+    def transform_python_types(self, obj):
+        """handle special scalars, default to default json encoder
+        """
+        # Pandas Timestamp
+        if is_pandas and isinstance(obj, pd.tslib.Timestamp):
+            return obj.value / 10**6.0  #nanosecond to millisecond
+        elif np.issubdtype(type(obj), np.float):
+            return float(obj)
+        elif np.issubdtype(type(obj), np.int):
+            return int(obj)
+        elif np.issubdtype(type(obj), np.bool_):
+            return bool(obj)
+        # Numpy datetime64
+        elif isinstance(obj, np.datetime64):
+            epoch_delta = obj - np.datetime64('1970-01-01T00:00:00Z')
+            return (epoch_delta / np.timedelta64(1, 'ms'))
+        else:
+            return super(BokehJSONEncoder, self).default(obj)
 
     def default(self, obj):
         """This is slightly different than json.JSONEncoder.default(obj)
@@ -68,10 +96,14 @@ class Encoder(json.JSONEncoder):
         """
         if isinstance(obj, (datetime.date, datetime.time, datetime.datetime)):
             return '"%s"' % obj.isoformat()
-        elif isinstance(obj, unicode):
+        elif isinstance(obj, strtypes):
             return '"%s"' % unicodedata.normalize('NFD', obj).encode('utf-8')
         elif isinstance(obj, decimal.Decimal):
             return str(obj)
+        if isinstance(obj, (pd.Series, pd.Index)):
+            return transform_series(obj)
+        elif isinstance(obj, np.ndarray):
+            return transform_array(obj)
         return super(Encoder, self).default(obj)
 
     def _iterencode_default(self, o, markers=None):
@@ -86,8 +118,8 @@ def dumps(obj, indent=None):
 class Decoder(json.JSONDecoder):
     def raw_decode(self, s, **kw):
         obj, end = super(Decoder, self).raw_decode(s, **kw)
-        if isinstance(obj, types.StringTypes):
-            obj = unicodedata.normalize('NFD', unicode(obj))
+        if isinstance(obj, strtypes):
+            obj = unicodedata.normalize('NFD', str(obj))
         return obj, end
 
 def load(fp):
@@ -107,10 +139,50 @@ def tool():
         raise SystemExit("{0} [infile [outfile]]".format(sys.argv[0]))
     try:
         obj = load(infile)
-    except ValueError, e:
+    except ValueError as e:
         raise SystemExit(e)
     dump(obj, outfile)
     outfile.write('\n')
+
+def transform_series(obj):
+    """transforms pandas series into array of values
+    """
+    vals = obj.values
+    return transform_array(vals)
+
+def transform_array(obj):
+    """Transform arrays into lists of json safe types
+    also handles pandas series, and replacing
+    nans and infs with strings
+    """
+    # Check for astype failures (putative Numpy < 1.7)
+    dt2001 = np.datetime64('2001')
+    legacy_datetime64 = (dt2001.astype('int64') ==
+                         dt2001.astype('datetime64[ms]').astype('int64'))
+    ## not quite correct, truncates to ms..
+    if obj.dtype.kind == 'M':
+        if legacy_datetime64:
+            if obj.dtype == np.dtype('datetime64[ns]'):
+                return (obj.astype('int64') / 10**6.0).tolist()
+        else:
+            return (obj.astype('datetime64[us]').astype('int64') / 1000.).tolist()
+    elif obj.dtype.kind in ('u', 'i', 'f'):
+        return transform_numerical_array(obj)
+    return obj.tolist()
+
+def transform_numerical_array(obj):
+    """handles nans/inf conversion
+    """
+    if isinstance(obj, np.ma.MaskedArray):
+        obj = obj.filled(np.nan)  # Set masked values to nan
+    if not np.isnan(obj).any() and not np.isinf(obj).any():
+        return obj.tolist()
+    else:
+        transformed = obj.astype('object')
+        transformed[np.isnan(obj)] = 'NaN'
+        transformed[np.isposinf(obj)] = 'Infinity'
+        transformed[np.isneginf(obj)] = '-Infinity'
+        return transformed.tolist()
 
 if __name__ == '__main__':
     tool()

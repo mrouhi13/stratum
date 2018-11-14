@@ -51,7 +51,7 @@ class ServiceNotFoundException(ServiceException):
 
 class MethodNotFoundException(ServiceException):
     code = -3
-    
+
 class FeeRequiredException(ServiceException):
     code = -10
 

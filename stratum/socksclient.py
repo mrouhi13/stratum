@@ -1,9 +1,13 @@
 # Copyright (c) 2011-2012, Linus Nordberg
 # Taken from https://github.com/ln5/twisted-socks/
 
+from builtins import object
 import socket
 import struct
-from zope.interface import implements
+try:
+   from zope.interface import implementer as implements
+except Exception:
+   from zope.interface import implements
 from twisted.internet import defer
 from twisted.internet.interfaces import IStreamClientEndpoint
 from twisted.internet.protocol import Protocol, ClientFactory
@@ -102,5 +106,5 @@ class SOCKSWrapper(object):
             wf = _WrappingFactory(f)
             self._reactor.connectTCP(self._host, self._port, wf)
             return f.handshakeDone
-        except: 
-            return defer.fail() 
+        except:
+            return defer.fail()

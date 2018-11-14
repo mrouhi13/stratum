@@ -1,1 +1,2 @@
-from server import setup
+from __future__ import absolute_import
+from .server import setup
