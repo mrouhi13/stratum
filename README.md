@@ -12,7 +12,6 @@ Nickname slush at bitcointalk.org forum
 
 Installation
 ============
-
 Requirements:
 python 2.6 or 2.7
 linux-based system (should work on Mac OS too, not tested)
@@ -34,7 +33,6 @@ process as a root user.
 
 Configuration
 =============
-
 a) Basic configuration
 Copy config_default.py to config.py
 Edit at least those values: HOSTNAME, BITCOIN_TRUSTED_*
